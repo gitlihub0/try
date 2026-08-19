@@ -1,0 +1,8 @@
+{
+  "name": "qwert'un Eklenti Reposu",
+  "description": "q.",
+  "manifestVersion": 1,
+  "pluginLists": [
+    "https://raw.githubusercontent.com/gitlihub0/try/refs/heads/builds/plugins.json"
+  ]
+}
