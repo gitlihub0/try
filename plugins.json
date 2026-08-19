@@ -1,0 +1,66 @@
+[
+    {
+        "url": "https://raw.githubusercontent.com/gitlihub0/try/builds/AnimeciX.cs3",
+        "status": 1,
+        "version": 13,
+        "name": "AnimeciX",
+        "internalName": "AnimeciX",
+        "authors": [
+            "qwert"
+        ],
+        "description": "AnimeciX.",
+        "fileSize": 22832,
+        "repositoryUrl": "https://github.com/gitlihub0/try",
+        "language": "tr",
+        "tvTypes": [
+            "Anime"
+        ],
+        "iconUrl": "https://www.google.com/s2/favicons?domain=animecix.net&sz=%size%",
+        "apiVersion": 1,
+        "fileHash": "sha256-b6b646acb334c461c12d3fa8032267a68e1a292982f0002641cdfb8568fb897b"
+    },
+    {
+        "url": "https://raw.githubusercontent.com/gitlihub0/try/builds/Anizium.cs3",
+        "status": 1,
+        "version": 1,
+        "name": "Anizium",
+        "internalName": "Anizium",
+        "authors": [
+            "qwer"
+        ],
+        "description": "4K Anime.",
+        "fileSize": 37306,
+        "repositoryUrl": "https://github.com/gitlihub0/try",
+        "language": "tr",
+        "tvTypes": [
+            "Anime",
+            "AnimeMovie",
+            "OVA"
+        ],
+        "iconUrl": "https://anizium.com/assets/images/favicon.png",
+        "apiVersion": 1,
+        "fileHash": "sha256-715aa3fc7acd8072f24d856d01684d65f68560c3962a1f96056398d4f0d426ca"
+    },
+    {
+        "url": "https://raw.githubusercontent.com/gitlihub0/try/builds/InatBox.cs3",
+        "status": 1,
+        "version": 1,
+        "name": "InatBox",
+        "internalName": "InatBox",
+        "authors": [
+            "qwert"
+        ],
+        "description": "\u0130natBox.",
+        "fileSize": 37193,
+        "repositoryUrl": "https://github.com/gitlihub0/try",
+        "language": "tr",
+        "tvTypes": [
+            "Movie",
+            "TvSeries",
+            "Live"
+        ],
+        "iconUrl": "https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEh3vCp6N1K4bECoYRQD-cisJF2_6V_Hk01ZhDmoPR2JuM8O5qr4MqrPO1munM9cRlleBBSK6odYhLtDBWv4E3vhPhynlmS5hVVtJZShHoGA5REQ8_3v8SIlccTEqzVQu2UJyNYQdJNrKIfWy66RQeT0D-CcmFCbHPz5023H6p2v5fv4NVloZ5Rqo_yGrIY/s320/iNat-Box-App.png",
+        "apiVersion": 1,
+        "fileHash": "sha256-eea6356c6a6df596422a9e30dd6f2e5569205762f0c27ab1c9353c6796df84a5"
+    }
+]
