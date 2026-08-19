@@ -53,8 +53,7 @@ class InatBox : MainAPI() {
     private val aesKey = "ywevqtjrurkwtqgz" //Master secret and iv key
 
     override val mainPage = mainPageOf(
-        "https://boxbc.sbs/CDN/001_STR/boxbc.sbs/spor_v2.php"  to "Spor Kanalları",
-        "https://boxbc.sbs/CDN/001_STR/boxbc.sbs/derbiler.php" to "Derbiler",
+
 
         "${contentUrl}/tv/list1.php"                           to "Kanallar Liste 1 - TR",
         "${contentUrl}/tv/list2.php"                           to "Kanallar Liste 2 - GLB",
