@@ -104,7 +104,7 @@ class AnimeciX : MainAPI() {
             this.plot      = response.title.description
             this.episodes = mutableMapOf(DubStatus.Subbed to episodes)
             this.tags      = response.title.tags.map { it.name }
-            this.rating    = response.title.rating.toRatingInt()
+            this.score = Score.from10(response.title.rating)
             addActors(response.title.actors.map { Actor(it.name, fixUrlNull(it.poster)) })
             addTrailer(response.title.trailer)
         }
