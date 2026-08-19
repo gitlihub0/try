@@ -33,7 +33,7 @@ class InatBox : MainAPI() {
     // InatBox v15 Firebase Remote Config
     private val firebaseProjectId = "inatbox-c60cd"
     private val firebaseApiKey = "AIzaSyBFB8TuBXgojHyshkS6GSlnlQvCtPSRmFs"
-    private val firebaseAppId = "1:754795614042:android:c682b8144a8dd52bc1ad63"
+    private val firebaseAppId = "1:845468888832:android:3e5f3eac2658b8e21d0de5"
     private var inatRemoteConfig: JSONObject? = null
     private var firebaseInstallationId: String? = null
     private var firebaseInstallationToken: String? = null
