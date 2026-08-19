@@ -1,75 +1,78 @@
+package com.qwert
 
 import android.util.Log
-import com.lagradost.cloudstream3.*
-import com.lagradost.cloudstream3.utils.*
+import com.lagradost.cloudstream3.DubStatus
+import com.lagradost.cloudstream3.Episode
+import com.lagradost.cloudstream3.HomePageResponse
+import com.lagradost.cloudstream3.LiveStreamLoadResponse
+import com.lagradost.cloudstream3.LoadResponse
+import com.lagradost.cloudstream3.MainAPI
+import com.lagradost.cloudstream3.MainPageRequest
+import com.lagradost.cloudstream3.SearchResponse
+import com.lagradost.cloudstream3.SeasonData
+import com.lagradost.cloudstream3.SubtitleFile
+import com.lagradost.cloudstream3.TvType
+import com.lagradost.cloudstream3.app
+import com.lagradost.cloudstream3.mainPageOf
+import com.lagradost.cloudstream3.newAnimeLoadResponse
+import com.lagradost.cloudstream3.newEpisode
+import com.lagradost.cloudstream3.newHomePageResponse
+import com.lagradost.cloudstream3.newLiveSearchResponse
+import com.lagradost.cloudstream3.newLiveStreamLoadResponse
+import com.lagradost.cloudstream3.newMovieLoadResponse
+import com.lagradost.cloudstream3.newMovieSearchResponse
+import com.lagradost.cloudstream3.newTvSeriesSearchResponse
+import com.lagradost.cloudstream3.utils.newExtractorLink
+import com.lagradost.cloudstream3.utils.ExtractorLinkType
+import com.lagradost.cloudstream3.utils.Qualities
+import com.lagradost.cloudstream3.utils.loadExtractor
 import okhttp3.Interceptor
-import okhttp3.ResponseBody
 import org.json.JSONArray
 import java.net.URI
 import javax.crypto.Cipher
 import javax.crypto.spec.SecretKeySpec
 import javax.crypto.spec.IvParameterSpec
 import android.util.Base64
+import com.lagradost.cloudstream3.utils.ExtractorLink
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONException
 import org.json.JSONObject
-import okio.BufferedSource
 
 class InatBox : MainAPI() {
-    private val contentUrl  = "https://dizibox.rest"
-    //private val categoryUrl = "https://dizilab.cfd"
+    private val contentUrl = "https://diziboxen.help/CDN/001/002/dizibox"
 
-    override var name                 = "InatBox"
-    override val hasMainPage          = true
-    override var lang                 = "tr"
-    override val hasQuickSearch       = true
-    override val supportedTypes       = setOf(TvType.Movie, TvType.TvSeries, TvType.Live)
-    override var sequentialMainPage   = false
+    override var name = "InatBox"
+    override val hasMainPage = true
+    override var lang = "tr"
+    override val hasQuickSearch = true
+    override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries, TvType.Live)
+    override var sequentialMainPage = false
 
     private val urlToSearchResponse = mutableMapOf<String, SearchResponse>()
-    private val aesKey = "ywevqtjrurkwtqgz" //Master secret and iv key (This is used for both secret key and iv. This is the embedded master key for loading categories like sport channels.)
-
-    // InatBox v15 Firebase Remote Config
-    private val firebaseProjectId = "inatbox-c60cd"
-    private val firebaseApiKey = "AIzaSyBFB8TuBXgojHyshkS6GSlnlQvCtPSRmFs"
-    private val firebaseAppId = "1:754795614042:android:c682b8144a8dd52bc1ad63"
-    private var inatRemoteConfig: JSONObject? = null
-    private var firebaseInstallationId: String? = null
-    private var firebaseInstallationToken: String? = null
-    private var firebaseInstallationFid: String? = null
+    private val aesKey = "ywevqtjrurkwtqgz" //Master secret and iv key
 
     override val mainPage = mainPageOf(
-        "https://boxbc.sbs/CDN/001_STR/boxbc.sbs/spor_v2.php"  to "Spor Kanalları",
-        "https://boxbc.sbs/CDN/001_STR/boxbc.sbs/derbiler.php" to "Derbiler",
-
-        "${contentUrl}/tv/list1.php"                           to "Kanallar Liste 1 - TR",
-        "${contentUrl}/tv/list2.php"                           to "Kanallar Liste 2 - GLB",
-        "${contentUrl}/tv/list3.php"                           to "Kanallar Liste 3 - TR",
-        "${contentUrl}/tv/sinema.php"                          to "Sinema Kanalları",
-        "${contentUrl}/tv/belgesel.php"                        to "Belgesel Kanalları",
-        "${contentUrl}/tv/ulusal.php"                          to "Ulusal Kanallar",
-        "${contentUrl}/tv/haber.php"                           to "Haber Kanalları",
-        "${contentUrl}/tv/eba.php"                             to "Eba Kanalları",
-        "${contentUrl}/tv/cocuk.php"                           to "Çocuk Kanalları",
-        "${contentUrl}/tv/dini.php"                            to "Dini Kanallar",
-
-        "${contentUrl}/ex/index.php"                           to "EXXEN",
-        "${contentUrl}/ga/index.php"                           to "Gain",
-        "${contentUrl}/blu/index.php"                          to "BluTV",
-        "${contentUrl}/nf/index.php"                           to "Netflix", // Burası şu an çalışmıyor.
-        "${contentUrl}/dsny/index.php"                         to "Disney+",
-        "${contentUrl}/amz/index.php"                          to "Amazon Prime",
-        "${contentUrl}/hb/index.php"                           to "HBO Max",
-        "${contentUrl}/tbi/index.php"                          to "Tabii",
-        "${contentUrl}/film/mubi.php"                          to "Mubi",
-        "${contentUrl}/ccc/index.php"                          to "TOD",
-
-        "${contentUrl}/yabanci-dizi/index.php"                 to "Yabancı Diziler",
-        "${contentUrl}/yerli-dizi/index.php"                   to "Yerli Diziler",
-        "${contentUrl}/film/yerli-filmler.php"                 to "Yerli Filmler",
-        "${contentUrl}/film/4k-film-exo.php"                   to "4K Film İzle | Exo",
-        "${contentUrl}/film/4k-film-web.php"                   to "4K Film İzle | Web"
+        "${contentUrl}/tv/list1.php"              to "Spor ve Kanallar",
+        "${contentUrl}/tv/list2.php"              to "Kanallar Liste 2",
+        "${contentUrl}/tv/sinema.php"             to "Sinema Kanalları",
+        "${contentUrl}/tv/belgesel.php"           to "Belgesel Kanalları",
+        "${contentUrl}/tv/ulusal.php"             to "Ulusal Kanallar",
+        "${contentUrl}/tv/haber.php"              to "Haber Kanalları",
+        "${contentUrl}/tv/cocuk.php"              to "Çocuk Kanalları",
+        "${contentUrl}/tv/dini.php"               to "Dini Kanallar",
+        "${contentUrl}/ex/index.php"              to "EXXEN",
+        "${contentUrl}/ga/index.php"              to "Gain",
+        "${contentUrl}/nf/index.php"              to "Netflix",
+        "${contentUrl}/dsny/index.php"            to "Disney+",
+        "${contentUrl}/amz/index.php"             to "Amazon Prime",
+        "${contentUrl}/hb/index.php"              to "HBO Max",
+        "${contentUrl}/tbi/index.php"             to "Tabii",
+        "${contentUrl}/film/mubi.php"             to "Mubi",
+        "${contentUrl}/yabanci-dizi/index.php"    to "Yabancı Diziler",
+        "${contentUrl}/yerli-dizi/index.php"      to "Yerli Diziler",
+        "${contentUrl}/film/yerli-filmler.php"    to "Yerli Filmler",
+        "${contentUrl}/film/4k-film-exo.php"      to "4K Film İzle | Exo"
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
@@ -110,7 +113,7 @@ class InatBox : MainAPI() {
 
         val regex = try {
             Regex(query, RegexOption.IGNORE_CASE)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             Regex(Regex.escape(query), RegexOption.IGNORE_CASE)
         }
 
@@ -139,8 +142,8 @@ class InatBox : MainAPI() {
             val type = item.getString("diziType")
 
             return when (type) {
-                "dizi" -> parseTvSeriesResponse(item)
-                "film" -> parseMovieResponse(item)
+                "dizi", "dizi_mode" -> parseTvSeriesResponse(item)
+                "film", "film_mode" -> parseMovieResponse(item)
                 else -> null
             }
 
@@ -159,7 +162,12 @@ class InatBox : MainAPI() {
         }
     }
 
-    override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
+    override suspend fun loadLinks(
+        data: String,
+        isCasting: Boolean,
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit
+    ): Boolean {
         Log.d("InatBox", "data: $data")
         return try {
             if (data.startsWith("[")) {
@@ -181,7 +189,10 @@ class InatBox : MainAPI() {
         }
     }
 
-    private suspend fun parseTvSeriesResponse(item: JSONObject, tvType: TvType = TvType.TvSeries): LoadResponse? {
+    private suspend fun parseTvSeriesResponse(
+        item: JSONObject,
+        tvType: TvType = TvType.TvSeries
+    ): LoadResponse? {
         val episodes = mutableMapOf<DubStatus, MutableList<Episode>>()
         val seasonDataList = mutableListOf<SeasonData>()
 
@@ -223,7 +234,7 @@ class InatBox : MainAPI() {
                                 this.episode = j + 1
                             }
                         )
-                    } catch (e: JSONException) {
+                    } catch (_: JSONException) {
                         continue
                     }
                 }
@@ -266,7 +277,12 @@ class InatBox : MainAPI() {
                 val jsonResponse = makeInatRequest(url) ?: return null
                 val jsonArray = JSONArray(jsonResponse)
 
-                return newMovieLoadResponse(name = name,url = item.toString(), type = TvType.Movie, dataUrl = jsonArray.toString()){
+                return newMovieLoadResponse(
+                    name = name,
+                    url = item.toString(),
+                    type = TvType.Movie,
+                    dataUrl = jsonArray.toString()
+                ) {
                     this.posterUrl = posterUrl
                     this.plot = plot
                 }
@@ -344,11 +360,15 @@ class InatBox : MainAPI() {
         )
     }
 
-    private suspend fun loadChContentLinks(chContent: ChContent, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit){
+    private suspend fun loadChContentLinks(
+        chContent: ChContent,
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit
+    ) {
         val chType = chContent.chType
-        val contentToProcess : ChContent
+        val contentToProcess: ChContent
 
-        if(chType == "tekli_regex_lb_sh_3"){
+        if (chType == "tekli_regex_lb_sh_3") {
             val name = chContent.chName
             val url = chContent.chUrl
             val posterUrl = chContent.chImg
@@ -356,20 +376,22 @@ class InatBox : MainAPI() {
             val reg = chContent.chReg
             val type = chContent.chType
 
-            val jsonResponse = runCatching { makeInatRequest(url) }.getOrNull() ?: getJsonFromEncryptedInatResponse(app.get(url).text) ?: return
+            val jsonResponse = runCatching { makeInatRequest(url) }.getOrNull()
+                ?: getJsonFromEncryptedInatResponse(app.get(url).body.string()) ?: return
             val firstItem = JSONObject(jsonResponse)
             firstItem.put("chHeaders", headers)
             firstItem.put("chReg", reg)
-            firstItem.put("chName",name)
-            firstItem.put("chImg",posterUrl)
-            firstItem.put("chType",type)
+            firstItem.put("chName", name)
+            firstItem.put("chImg", posterUrl)
+            firstItem.put("chType", type)
             contentToProcess = parseToChContent(firstItem)
-        } else{
+        } else {
             contentToProcess = chContent
         }
 
-        val sourceUrl = resolveInatUrl(contentToProcess.chUrl, playHost = true)
+        val sourceUrl = contentToProcess.chUrl
 
+        // Headerları hazırlama kısmı
         val headers: MutableMap<String, String> = mutableMapOf()
         try {
             val chHeaders = contentToProcess.chHeaders
@@ -386,247 +408,73 @@ class InatBox : MainAPI() {
                 headers["Cookie"] = cookie
             }
         } catch (_: Exception) {
-
         }
 
-        val extractorFound =
-            loadExtractor(sourceUrl, headers["Referer"], subtitleCallback){
-                callback.invoke(
-                    ExtractorLink(source = it.source,name = contentToProcess.chName, url = it.url, referer = it.referer, quality = it.quality, headers = it.headers, type = it.type)
-                )
-            }
+        val extractorFound = if (sourceUrl.contains("dzen.ru")) {
+            loadExtractor(sourceUrl, subtitleCallback, callback)
+        } else {
+            loadExtractor(sourceUrl, subtitleCallback, callback)
+        }
 
-        //When no extractor found, try to load as generic
+        // Extractor bulunamazsa genel yükleme denemesi
         if (!extractorFound) {
             callback.invoke(
-                ExtractorLink(
+                newExtractorLink(
                     source = this.name,
                     name = contentToProcess.chName,
                     url = sourceUrl,
-                    referer = "",
-                    quality = Qualities.Unknown.value,
-                    headers = headers,
-                    type = if(sourceUrl.contains(".m3u8")) ExtractorLinkType.M3U8 else if(sourceUrl.contains(".mpd")) ExtractorLinkType.DASH else ExtractorLinkType.VIDEO
-                )
+                    type = if (sourceUrl.contains(".m3u8")) ExtractorLinkType.M3U8 else if (sourceUrl.contains(".mpd")) ExtractorLinkType.DASH else ExtractorLinkType.VIDEO
+                ) {
+                    // 4. DÜZELTME: 'mapOf("Referer" to headers)' hatalıydı (Map içinde Map).
+                    // Direkt 'headers' değişkenini atıyoruz.
+                    this.headers = headers
+                    this.quality = Qualities.Unknown.value
+                }
             )
         }
     }
 
     private suspend fun makeInatRequest(url: String): String? {
-        val resolvedUrl = resolveInatUrl(url, playHost = false)
-
+        // Extract hostname using URI
         val hostName = try {
-            URI(resolvedUrl).host ?: throw IllegalArgumentException("Invalid URL: $resolvedUrl")
+            URI(url).host ?: throw IllegalArgumentException("Invalid URL: $url")
         } catch (e: Exception) {
-            Log.e("InatBox", "Failed to extract hostname from URL: $resolvedUrl", e)
+            Log.e("InatBox", "Failed to extract hostname from URL: $url", e)
             return null
         }
 
-        val config = getInatRemoteConfig()
-        val referer = config?.optString("inat_disk_ref").orEmpty().ifBlank { "https://speedrestapi.com/" }
-        val userAgent = config?.optString("inat_disk_ua").orEmpty().ifBlank { "speedrestapi" }
-        val xRequestedWith = config?.optString("inat_disk_xrw").orEmpty().ifBlank { "com.bp.box" }
-
-        val headers = mutableMapOf(
+        val headers = mapOf(
             "Cache-Control" to "no-cache",
             "Content-Length" to "37",
             "Content-Type" to "application/x-www-form-urlencoded; charset=UTF-8",
             "Host" to hostName,
-            "Referer" to referer,
-            "X-Requested-With" to xRequestedWith
+            "Referer" to "https://speedrestapi.com/",
+            "X-Requested-With" to "com.bp.box"
         )
 
         val requestBody = "1=${aesKey}&0=${aesKey}"
 
         val interceptor = Interceptor { chain ->
             val request = chain.request()
-            val newRequest = request.newBuilder().header("User-Agent", userAgent).build()
+            val newRequest = request.newBuilder().header("User-Agent", "speedrestapi").build()
             chain.proceed(newRequest)
         }
 
-        return try {
-            val response = app.post(
-                url = resolvedUrl,
-                headers = headers,
-                requestBody = requestBody.toRequestBody(
-                    contentType = "application/x-www-form-urlencoded; charset=UTF-8".toMediaType()
-                ),
-                interceptor = interceptor
-            )
-
-            if (response.isSuccessful) {
-                val source = response.body?.source()
-                val encryptedResponse = source?.readByteArray()
-                val encryptedResponseString = encryptedResponse?.let { String(it, Charsets.UTF_8) }
-                encryptedResponseString?.let { getJsonFromEncryptedInatResponse(it) }
-            } else {
-                Log.e("InatBox", "Request failed: HTTP ${response.code} URL=$resolvedUrl")
-                null
-            }
-        } catch (e: Exception) {
-            Log.e("InatBox", "Request error: ${e.message} URL=$resolvedUrl", e)
-            null
-        }
-    }
-
-    private suspend fun resolveInatUrl(originalUrl: String, playHost: Boolean): String {
-        val isDisk = originalUrl.contains("boxbc.sbs", ignoreCase = true)
-        val isContent = originalUrl.contains("dizibox.rest", ignoreCase = true)
-        if (!isDisk && !isContent) return originalUrl
-
-        val config = getInatRemoteConfig() ?: return originalUrl
-        val keyCandidates = if (isDisk) {
-            if (playHost) listOf("inat_disk_play_host", "inat_disk_host")
-            else listOf("inat_disk_host")
-        } else {
-            listOf("inatHost", "inat2Host", "inatHost1", "inat2Host1")
-        }
-
-        val configuredHost = keyCandidates.asSequence()
-            .map { config.optString(it).trim() }
-            .firstOrNull { it.isNotBlank() }
-            ?: return originalUrl
-
-        val normalizedHost = configuredHost
-            .removePrefix("https://").removePrefix("http://").trimEnd('/')
-
-        val resolved = originalUrl.replace(
-            Regex("^https?://[^/]+", RegexOption.IGNORE_CASE),
-            "https://$normalizedHost"
+        val response = app.post(
+            url = url,
+            headers = headers,
+            requestBody = requestBody.toRequestBody(contentType = "application/x-www-form-urlencoded; charset=UTF-8".toMediaType()),
+            interceptor = interceptor
         )
-        Log.d("InatBox", "Resolved Inat URL: $originalUrl -> $resolved")
-        return resolved
-    }
 
-    private suspend fun getInatRemoteConfig(): JSONObject? {
-        inatRemoteConfig?.let { return it }
-
-        return try {
-            val installation = getFirebaseInstallation() ?: return null
-            val installationId = installation.first
-            val authToken = installation.second
-
-            val body = JSONObject().apply {
-                put("app_instance_id", installationId)
-                put("app_instance_id_token", authToken)
-                put("app_id", firebaseAppId)
-                put("country_code", "TR")
-                put("language_code", "tr")
-                put("platform_version", android.os.Build.VERSION.RELEASE)
-                put("time_zone", java.util.TimeZone.getDefault().id)
-                put("package_name", "com.bp.box")
-                put("app_version", "15")
-                put("app_build", 15)
-                put("sdk_version", "21.0.1")
-            }
-
-            val response = app.post(
-                url = "https://firebaseremoteconfig.googleapis.com/v1/projects/$firebaseProjectId/namespaces/firebase:fetch",
-                headers = mapOf(
-                    "Content-Type" to "application/json",
-                    "X-Goog-Api-Key" to firebaseApiKey,
-                    "X-Goog-Firebase-Installations-Auth" to authToken,
-                    "X-Android-Package" to "com.bp.box",
-                    "X-Android-Cert" to "8E37DF3C18E142D4A4DE88DB68E08A180D060A91"
-                ),
-                requestBody = body.toString()
-                    .toRequestBody("application/json; charset=utf-8".toMediaType())
-            )
-
-            if (!response.isSuccessful) {
-                Log.e("InatBox", "Firebase Remote Config HTTP ${response.code}")
-                return null
-            }
-
-            val json = JSONObject(response.text)
-            val entries = json.optJSONObject("entries") ?: return null
-            inatRemoteConfig = normalizeRemoteConfig(entries)
-
-            Log.d("InatBox", "Remote Config loaded: ${inatRemoteConfig?.keys()?.asSequence()?.toList()}")
-            inatRemoteConfig
-        } catch (e: Exception) {
-            Log.e("InatBox", "Remote Config error: ${e.message}", e)
-            null
+        if (response.isSuccessful) {
+            val encryptedResponse = response.body.string()
+            // Log.d("InatBox", "Encrypted response: ${encryptedResponse}")
+            return getJsonFromEncryptedInatResponse(encryptedResponse)
+        } else {
+            Log.e("InatBox", "Request failed")
+            return null
         }
-    }
-
-    private fun normalizeRemoteConfig(entries: JSONObject): JSONObject {
-        val result = JSONObject()
-        val keys = entries.keys()
-
-        while (keys.hasNext()) {
-            val key = keys.next()
-            val value = entries.opt(key)
-
-            when (value) {
-                is JSONObject -> {
-                    val stringValue = value.optString("stringValue", "")
-                    if (stringValue.isNotBlank()) {
-                        result.put(key, stringValue)
-                    } else {
-                        result.put(key, value)
-                    }
-                }
-                else -> result.put(key, value)
-            }
-        }
-
-        return result
-    }
-
-    private suspend fun getFirebaseInstallation(): Pair<String, String>? {
-        if (!firebaseInstallationId.isNullOrBlank() && !firebaseInstallationToken.isNullOrBlank()) {
-            return firebaseInstallationId!! to firebaseInstallationToken!!
-        }
-
-        return try {
-            val fid = firebaseInstallationFid ?: generateFirebaseFid().also { firebaseInstallationFid = it }
-            val body = JSONObject().apply {
-                put("fid", fid)
-                put("appId", firebaseAppId)
-                put("authVersion", "FIS_v2")
-                put("sdkVersion", "a:17.0.1")
-            }
-
-            val response = app.post(
-                url = "https://firebaseinstallations.googleapis.com/v1/projects/$firebaseProjectId/installations",
-                headers = mapOf(
-                    "Content-Type" to "application/json",
-                    "Accept" to "application/json",
-                    "X-Goog-Api-Key" to firebaseApiKey,
-                    "X-Android-Package" to "com.bp.box",
-                    "X-Android-Cert" to "8E37DF3C18E142D4A4DE88DB68E08A180D060A91"
-                ),
-                requestBody = body.toString()
-                    .toRequestBody("application/json; charset=utf-8".toMediaType())
-            )
-
-            if (!response.isSuccessful) {
-                Log.e("InatBox", "Firebase Installations HTTP ${response.code}")
-                return null
-            }
-
-            val json = JSONObject(response.text)
-            val token = json.optJSONObject("authToken")?.optString("token").orEmpty().trim()
-
-            if (fid.isBlank() || token.isBlank()) {
-                Log.e("InatBox", "Firebase Installations response did not contain fid/authToken")
-                return null
-            }
-
-            firebaseInstallationId = fid
-            firebaseInstallationToken = token
-            fid to token
-        } catch (e: Exception) {
-            Log.e("InatBox", "Firebase Installations error: ${e.message}", e)
-            null
-        }
-    }
-
-    private fun generateFirebaseFid(): String {
-        val bytes = ByteArray(17)
-        java.security.SecureRandom().nextBytes(bytes)
-        return android.util.Base64.encodeToString(bytes, android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP or android.util.Base64.NO_PADDING).take(22)
     }
 
     private fun getJsonFromEncryptedInatResponse(response: String): String? {
@@ -678,11 +526,11 @@ class InatBox : MainAPI() {
                     val posterUrl = item.getString("diziImg")
 
                     val searchResponse = when (type) {
-                        "dizi" -> newTvSeriesSearchResponse(name, item.toString()) {
+                        "dizi", "dizi_mode" -> newTvSeriesSearchResponse(name, item.toString()) {
                             this.posterUrl = posterUrl
                         }
 
-                        "film" -> newMovieSearchResponse(name, item.toString()) {
+                        "film", "film_mode" -> newMovieSearchResponse(name, item.toString()) {
                             this.posterUrl = posterUrl
                         }
 
@@ -696,7 +544,11 @@ class InatBox : MainAPI() {
                     val chType = item.getString("chType")
 
                     val searchResponse = when (chType) {
-                        "live_url", "tekli_regex_lb_sh_3" -> newLiveSearchResponse(name, item.toString(), TvType.Live) {
+                        "live_url", "tekli_regex_lb_sh_3" -> newLiveSearchResponse(
+                            name,
+                            item.toString(),
+                            TvType.Live
+                        ) {
                             this.posterUrl = posterUrl
                         }
 
@@ -714,3 +566,4 @@ class InatBox : MainAPI() {
         return searchResults
     }
 }
+
