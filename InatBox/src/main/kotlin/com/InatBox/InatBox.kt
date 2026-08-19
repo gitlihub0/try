@@ -35,6 +35,10 @@ class InatBox : MainAPI() {
     private val firebaseApiKey = "AIzaSyBFB8TuBXgojHyshkS6GSlnlQvCtPSRmFs"
     private val firebaseAppId = "1:845468888832:android:3e5f3eac2658b8e21d0de5"
     private var inatRemoteConfig: JSONObject? = null
+    @Volatile private var remoteConfigFetchInProgress = false
+    @Volatile private var remoteConfigLastAttemptMs = 0L
+    private val remoteConfigLock = Any()
+    private val remoteConfigRetryMs = 60_000L
     private var firebaseInstallationId: String? = null
     private var firebaseInstallationToken: String? = null
 
@@ -469,26 +473,14 @@ class InatBox : MainAPI() {
     }
 
     private suspend fun resolveInatUrl(originalUrl: String, playHost: Boolean): String {
-        val isSportHost = originalUrl.contains("boxbc.sbs", ignoreCase = true)
-        val isContentHost = originalUrl.contains("dizibox.rest", ignoreCase = true)
-        if (!isSportHost && !isContentHost) {
+        if (!originalUrl.contains("boxbc.sbs", ignoreCase = true)) {
             return originalUrl
         }
 
         val config = getInatRemoteConfig() ?: return originalUrl
-
-        val key: String
-        val configuredHost: String
-        if (isSportHost) {
-            key = if (playHost) "inat_disk_play_host" else "inat_disk_host"
-            configuredHost = config.optString(key).trim()
-                .ifBlank { config.optString("inat_disk_host").trim() }
-        } else {
-            // v15 exposes the normal content host separately from the disk/sports host.
-            key = "inatHost"
-            configuredHost = config.optString("inatHost").trim()
-                .ifBlank { config.optString("inat2Host").trim() }
-        }
+        val key = if (playHost) "inat_disk_play_host" else "inat_disk_host"
+        val configuredHost = config.optString(key).trim()
+            .ifBlank { config.optString("inat_disk_host").trim() }
 
         if (configuredHost.isBlank()) {
             Log.w("InatBox", "Remote Config did not contain $key; using old URL")
@@ -512,36 +504,54 @@ class InatBox : MainAPI() {
     private suspend fun getInatRemoteConfig(): JSONObject? {
         inatRemoteConfig?.let { return it }
 
+        val now = System.currentTimeMillis()
+
+        // Only one Remote Config request may be in flight. This prevents the
+        // category requests from hammering Firebase and receiving HTTP 429.
+        synchronized(remoteConfigLock) {
+            inatRemoteConfig?.let { return it }
+            if (remoteConfigFetchInProgress) {
+                Log.d("InatBox", "Remote Config fetch already in progress; using fallback")
+                return null
+            }
+            if (now - remoteConfigLastAttemptMs < remoteConfigRetryMs) {
+                Log.d("InatBox", "Remote Config retry cooldown active")
+                return null
+            }
+            remoteConfigFetchInProgress = true
+            remoteConfigLastAttemptMs = now
+        }
+
         return try {
             val installation = getFirebaseInstallation() ?: return null
             val installationId = installation.first
             val authToken = installation.second
 
-            // Firebase Remote Config client fetch uses snake_case fields and
-            // requires the Firebase Installation auth token in the request body.
-            // The previous version used camelCase fields, which caused HTTP 400.
             val body = JSONObject().apply {
-                put("app_id", firebaseAppId)
-                put("app_instance_id", installationId)
-                put("app_instance_id_token", authToken)
-                put("app_version", "15")
-                put("country_code", "tr")
-                put("language_code", "tr-TR")
-                put("package_name", "com.bp.box")
-                put("platform_version", android.os.Build.VERSION.RELEASE)
+                put("appId", firebaseAppId)
+                put("appInstanceId", installationId)
+                put("appVersion", "15")
+                put("countryCode", "TR")
+                put("languageCode", "tr")
+                put("platform", "ANDROID")
             }
 
             val response = app.post(
-                url = "https://firebaseremoteconfig.googleapis.com/v1/projects/$firebaseProjectId/namespaces/firebase:fetch?key=$firebaseApiKey",
+                url = "https://firebaseremoteconfig.googleapis.com/v1/projects/$firebaseProjectId/namespaces/firebase:fetch",
                 headers = mapOf(
-                    "Content-Type" to "application/json"
+                    "Content-Type" to "application/json",
+                    "X-Goog-Api-Key" to firebaseApiKey,
+                    "X-Goog-Firebase-Installations-Auth" to authToken
                 ),
                 requestBody = body.toString()
                     .toRequestBody("application/json; charset=utf-8".toMediaType())
             )
 
             if (!response.isSuccessful) {
-                Log.e("InatBox", "Firebase Remote Config HTTP ${response.code}")
+                Log.e(
+                    "InatBox",
+                    "Firebase Remote Config HTTP ${response.code}: ${response.text.take(300)}"
+                )
                 return null
             }
 
@@ -549,11 +559,16 @@ class InatBox : MainAPI() {
             val entries = json.optJSONObject("entries") ?: return null
             inatRemoteConfig = normalizeRemoteConfig(entries)
 
-            Log.d("InatBox", "Remote Config loaded: ${inatRemoteConfig?.keys()?.asSequence()?.toList()}")
+            Log.d(
+                "InatBox",
+                "Remote Config loaded: ${inatRemoteConfig?.keys()?.asSequence()?.toList()}"
+            )
             inatRemoteConfig
         } catch (e: Exception) {
             Log.e("InatBox", "Remote Config error: ${e.message}", e)
             null
+        } finally {
+            remoteConfigFetchInProgress = false
         }
     }
 
