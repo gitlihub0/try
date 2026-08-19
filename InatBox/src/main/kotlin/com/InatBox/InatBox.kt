@@ -1,7 +1,5 @@
 
 import android.util.Log
-import android.content.Context
-import com.lagradost.cloudstream3.CloudStreamApp
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
 import okhttp3.Interceptor
@@ -35,9 +33,11 @@ class InatBox : MainAPI() {
     // InatBox v15 Firebase Remote Config
     private val firebaseProjectId = "inatbox-c60cd"
     private val firebaseApiKey = "AIzaSyBFB8TuBXgojHyshkS6GSlnlQvCtPSRmFs"
-    private val firebaseAppId = "1:845468888832:android:3e5f3eac2658b8e21d0de5"
+    private val firebaseAppId = "1:754795614042:android:c682b8144a8dd52bc1ad63"
     private var inatRemoteConfig: JSONObject? = null
-    private var firebaseApp: Any? = null
+    private var firebaseInstallationId: String? = null
+    private var firebaseInstallationToken: String? = null
+    private var firebaseInstallationFid: String? = null
 
     override val mainPage = mainPageOf(
         "https://boxbc.sbs/CDN/001_STR/boxbc.sbs/spor_v2.php"  to "Spor Kanalları",
@@ -423,28 +423,9 @@ class InatBox : MainAPI() {
         }
 
         val config = getInatRemoteConfig()
-        val isDiziHost = url.contains("dizibox.rest", ignoreCase = true)
-
-        // v15 keeps separate request settings for the normal content host and
-        // the disk/sports host. Use the normal inat* keys for dizibox-style
-        // endpoints and inat_disk_* for the box/disk endpoints.
-        val referer = if (isDiziHost) {
-            config?.optString("inatRF").orEmpty()
-        } else {
-            config?.optString("inat_disk_ref").orEmpty()
-        }.ifBlank { "https://speedrestapi.com/" }
-
-        val userAgent = if (isDiziHost) {
-            config?.optString("inatUA").orEmpty()
-        } else {
-            config?.optString("inat_disk_ua").orEmpty()
-        }.ifBlank { "speedrestapi" }
-
-        val xRequestedWith = if (isDiziHost) {
-            config?.optString("inatXRW").orEmpty()
-        } else {
-            config?.optString("inat_disk_xrw").orEmpty()
-        }.ifBlank { "com.bp.box" }
+        val referer = config?.optString("inat_disk_ref").orEmpty().ifBlank { "https://speedrestapi.com/" }
+        val userAgent = config?.optString("inat_disk_ua").orEmpty().ifBlank { "speedrestapi" }
+        val xRequestedWith = config?.optString("inat_disk_xrw").orEmpty().ifBlank { "com.bp.box" }
 
         val headers = mutableMapOf(
             "Cache-Control" to "no-cache",
@@ -464,7 +445,6 @@ class InatBox : MainAPI() {
         }
 
         return try {
-            Log.d("InatBox", "Inat request: $resolvedUrl")
             val response = app.post(
                 url = resolvedUrl,
                 headers = headers,
@@ -490,37 +470,30 @@ class InatBox : MainAPI() {
     }
 
     private suspend fun resolveInatUrl(originalUrl: String, playHost: Boolean): String {
+        val isDisk = originalUrl.contains("boxbc.sbs", ignoreCase = true)
+        val isContent = originalUrl.contains("dizibox.rest", ignoreCase = true)
+        if (!isDisk && !isContent) return originalUrl
+
         val config = getInatRemoteConfig() ?: return originalUrl
-
-        val isBoxHost = originalUrl.contains("boxbc.sbs", ignoreCase = true)
-        val isDiziHost = originalUrl.contains("dizibox.rest", ignoreCase = true)
-        if (!isBoxHost && !isDiziHost) return originalUrl
-
-        val keys = when {
-            isBoxHost && playHost -> listOf("inat_disk_play_host", "inat_disk_host")
-            isBoxHost -> listOf("inat_disk_host")
-            else -> listOf("inatHost", "inat2Host")
+        val keyCandidates = if (isDisk) {
+            if (playHost) listOf("inat_disk_play_host", "inat_disk_host")
+            else listOf("inat_disk_host")
+        } else {
+            listOf("inatHost", "inat2Host", "inatHost1", "inat2Host1")
         }
 
-        val configuredHost = keys.asSequence()
+        val configuredHost = keyCandidates.asSequence()
             .map { config.optString(it).trim() }
             .firstOrNull { it.isNotBlank() }
-
-        if (configuredHost.isNullOrBlank()) {
-            Log.w("InatBox", "Remote Config did not contain ${keys.joinToString("/")}; using old URL")
-            return originalUrl
-        }
+            ?: return originalUrl
 
         val normalizedHost = configuredHost
-            .removePrefix("https://")
-            .removePrefix("http://")
-            .trimEnd('/')
+            .removePrefix("https://").removePrefix("http://").trimEnd('/')
 
         val resolved = originalUrl.replace(
             Regex("^https?://[^/]+", RegexOption.IGNORE_CASE),
             "https://$normalizedHost"
         )
-
         Log.d("InatBox", "Resolved Inat URL: $originalUrl -> $resolved")
         return resolved
     }
@@ -529,91 +502,132 @@ class InatBox : MainAPI() {
         inatRemoteConfig?.let { return it }
 
         return try {
-            val context = CloudStreamApp.context
-            if (context == null) {
-                Log.e("InatBox", "CloudStream application context is unavailable")
-                return null
+            val installation = getFirebaseInstallation() ?: return null
+            val installationId = installation.first
+            val authToken = installation.second
+
+            val body = JSONObject().apply {
+                put("app_instance_id", installationId)
+                put("app_instance_id_token", authToken)
+                put("app_id", firebaseAppId)
+                put("country_code", "TR")
+                put("language_code", "tr")
+                put("platform_version", android.os.Build.VERSION.RELEASE)
+                put("time_zone", java.util.TimeZone.getDefault().id)
+                put("package_name", "com.bp.box")
+                put("app_version", "15")
+                put("app_build", 15)
+                put("sdk_version", "21.0.1")
             }
 
-            // v15 uses the Firebase Android SDK itself. Reusing the SDK is important:
-            // it creates the Installation ID/token and sends the exact Remote Config
-            // request format expected by Firebase. The previous hand-written REST
-            // request was rejected with HTTP 400/429.
-            val firebaseAppClass = Class.forName("com.google.firebase.FirebaseApp")
-            val firebaseOptionsBuilderClass = Class.forName("com.google.firebase.FirebaseOptions\$Builder")
-            val optionsBuilder = firebaseOptionsBuilderClass.getDeclaredConstructor().newInstance()
-
-            firebaseOptionsBuilderClass.getMethod("setApplicationId", String::class.java)
-                .invoke(optionsBuilder, firebaseAppId)
-            firebaseOptionsBuilderClass.getMethod("setApiKey", String::class.java)
-                .invoke(optionsBuilder, firebaseApiKey)
-            firebaseOptionsBuilderClass.getMethod("setProjectId", String::class.java)
-                .invoke(optionsBuilder, firebaseProjectId)
-            firebaseOptionsBuilderClass.getMethod("setGcmSenderId", String::class.java)
-                .invoke(optionsBuilder, "845468888832")
-
-            val options = firebaseOptionsBuilderClass.getMethod("build").invoke(optionsBuilder)
-
-            val appName = "inatbox-v15"
-            val getApps = firebaseAppClass.getMethod("getApps", Context::class.java)
-            val apps = getApps.invoke(null, context) as? List<*>
-            var appInstance = apps?.firstOrNull {
-                runCatching {
-                    firebaseAppClass.getMethod("getName").invoke(it) == appName
-                }.getOrDefault(false)
-            }
-
-            if (appInstance == null) {
-                appInstance = firebaseAppClass.getMethod(
-                    "initializeApp",
-                    Context::class.java,
-                    Class.forName("com.google.firebase.FirebaseOptions"),
-                    String::class.java
-                ).invoke(null, context, options, appName)
-            }
-            firebaseApp = appInstance
-
-            val remoteConfigClass = Class.forName("com.google.firebase.remoteconfig.FirebaseRemoteConfig")
-            val getInstance = remoteConfigClass.getMethod(
-                "getInstance",
-                firebaseAppClass
+            val response = app.post(
+                url = "https://firebaseremoteconfig.googleapis.com/v1/projects/$firebaseProjectId/namespaces/firebase:fetch",
+                headers = mapOf(
+                    "Content-Type" to "application/json",
+                    "X-Goog-Api-Key" to firebaseApiKey,
+                    "X-Goog-Firebase-Installations-Auth" to authToken,
+                    "X-Android-Package" to "com.bp.box",
+                    "X-Android-Cert" to "8E37DF3C18E142D4A4DE88DB68E08A180D060A91"
+                ),
+                requestBody = body.toString()
+                    .toRequestBody("application/json; charset=utf-8".toMediaType())
             )
-            val remoteConfig = getInstance.invoke(null, appInstance)
 
-            // Fetch once and let Firebase's own throttling/cache rules apply.
-            val fetchAndActivateTask = remoteConfigClass.getMethod("fetchAndActivate").invoke(remoteConfig)
-            val tasksClass = Class.forName("com.google.android.gms.tasks.Tasks")
-            tasksClass.getMethod("await", Class.forName("com.google.android.gms.tasks.Task"))
-                .invoke(null, fetchAndActivateTask)
-
-            val allValues = remoteConfigClass.getMethod("getAll").invoke(remoteConfig) as? Map<*, *>
-            val result = JSONObject()
-
-            allValues?.forEach { (key, value) ->
-                if (key == null || value == null) return@forEach
-                val stringValue = runCatching {
-                    value.javaClass.getMethod("asString").invoke(value)?.toString()
-                }.getOrNull()
-                if (!stringValue.isNullOrBlank()) {
-                    result.put(key.toString(), stringValue)
-                }
-            }
-
-            if (result.length() == 0) {
-                Log.e("InatBox", "Firebase SDK returned no Remote Config values")
+            if (!response.isSuccessful) {
+                Log.e("InatBox", "Firebase Remote Config HTTP ${response.code}")
                 return null
             }
 
-            inatRemoteConfig = result
-            Log.d("InatBox", "Remote Config loaded via Firebase SDK: ${result.keys().asSequence().toList()}")
-            Log.d("InatBox", "inatHost=${result.optString("inatHost")} inat2Host=${result.optString("inat2Host")}")
-            Log.d("InatBox", "inat_disk_host=${result.optString("inat_disk_host")} inat_disk_play_host=${result.optString("inat_disk_play_host")}")
-            result
-        } catch (e: Throwable) {
-            val cause = e.cause ?: e
-            Log.e("InatBox", "Firebase SDK Remote Config failed: ${cause.message}", cause)
+            val json = JSONObject(response.text)
+            val entries = json.optJSONObject("entries") ?: return null
+            inatRemoteConfig = normalizeRemoteConfig(entries)
+
+            Log.d("InatBox", "Remote Config loaded: ${inatRemoteConfig?.keys()?.asSequence()?.toList()}")
+            inatRemoteConfig
+        } catch (e: Exception) {
+            Log.e("InatBox", "Remote Config error: ${e.message}", e)
             null
         }
+    }
+
+    private fun normalizeRemoteConfig(entries: JSONObject): JSONObject {
+        val result = JSONObject()
+        val keys = entries.keys()
+
+        while (keys.hasNext()) {
+            val key = keys.next()
+            val value = entries.opt(key)
+
+            when (value) {
+                is JSONObject -> {
+                    val stringValue = value.optString("stringValue", "")
+                    if (stringValue.isNotBlank()) {
+                        result.put(key, stringValue)
+                    } else {
+                        result.put(key, value)
+                    }
+                }
+                else -> result.put(key, value)
+            }
+        }
+
+        return result
+    }
+
+    private suspend fun getFirebaseInstallation(): Pair<String, String>? {
+        if (!firebaseInstallationId.isNullOrBlank() && !firebaseInstallationToken.isNullOrBlank()) {
+            return firebaseInstallationId!! to firebaseInstallationToken!!
+        }
+
+        return try {
+            val fid = firebaseInstallationFid ?: generateFirebaseFid().also { firebaseInstallationFid = it }
+            val body = JSONObject().apply {
+                put("fid", fid)
+                put("appId", firebaseAppId)
+                put("authVersion", "FIS_v2")
+                put("sdkVersion", "a:17.0.1")
+            }
+
+            val response = app.post(
+                url = "https://firebaseinstallations.googleapis.com/v1/projects/$firebaseProjectId/installations",
+                headers = mapOf(
+                    "Content-Type" to "application/json",
+                    "Accept" to "application/json",
+                    "X-Goog-Api-Key" to firebaseApiKey,
+                    "X-Android-Package" to "com.bp.box",
+                    "X-Android-Cert" to "8E37DF3C18E142D4A4DE88DB68E08A180D060A91"
+                ),
+                requestBody = body.toString()
+                    .toRequestBody("application/json; charset=utf-8".toMediaType())
+            )
+
+            if (!response.isSuccessful) {
+                Log.e("InatBox", "Firebase Installations HTTP ${response.code}")
+                return null
+            }
+
+            val json = JSONObject(response.text)
+            val fid = json.optString("fid").trim()
+            val token = json.optJSONObject("authToken")?.optString("token").orEmpty().trim()
+
+            if (fid.isBlank() || token.isBlank()) {
+                Log.e("InatBox", "Firebase Installations response did not contain fid/authToken")
+                return null
+            }
+
+            firebaseInstallationId = fid
+            firebaseInstallationToken = token
+            fid to token
+        } catch (e: Exception) {
+            Log.e("InatBox", "Firebase Installations error: ${e.message}", e)
+            null
+        }
+    }
+
+    private fun generateFirebaseFid(): String {
+        val bytes = ByteArray(17)
+        java.security.SecureRandom().nextBytes(bytes)
+        return android.util.Base64.encodeToString(bytes, android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP or android.util.Base64.NO_PADDING).take(22)
     }
 
     private fun getJsonFromEncryptedInatResponse(response: String): String? {
