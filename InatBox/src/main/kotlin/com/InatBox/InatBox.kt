@@ -528,20 +528,28 @@ class InatBox : MainAPI() {
             val authToken = installation.second
 
             val body = JSONObject().apply {
-                put("appId", firebaseAppId)
                 put("appInstanceId", installationId)
                 put("appVersion", "15")
                 put("countryCode", "TR")
+                put("analyticsUserProperties", JSONObject())
+                put("appId", firebaseAppId)
+                put("platformVersion", android.os.Build.VERSION.RELEASE)
+                put("timeZone", java.util.TimeZone.getDefault().id)
+                put("sdkVersion", "21.0.1")
+                put("packageName", "com.bp.box")
+                put("appInstanceIdToken", authToken)
                 put("languageCode", "tr")
-                put("platform", "ANDROID")
+                put("appBuild", "15")
             }
 
             val response = app.post(
-                url = "https://firebaseremoteconfig.googleapis.com/v1/projects/$firebaseProjectId/namespaces/firebase:fetch",
+                url = "https://firebaseremoteconfig.googleapis.com/v1/projects/$firebaseProjectId/namespaces/firebase:fetch?key=$firebaseApiKey",
                 headers = mapOf(
                     "Content-Type" to "application/json",
+                    "Accept" to "application/json",
                     "X-Goog-Api-Key" to firebaseApiKey,
-                    "X-Goog-Firebase-Installations-Auth" to authToken
+                    "X-Goog-Firebase-Installations-Auth" to authToken,
+                    "X-Android-Package" to "com.bp.box"
                 ),
                 requestBody = body.toString()
                     .toRequestBody("application/json; charset=utf-8".toMediaType())
@@ -550,7 +558,7 @@ class InatBox : MainAPI() {
             if (!response.isSuccessful) {
                 Log.e(
                     "InatBox",
-                    "Firebase Remote Config HTTP ${response.code}: ${response.text.take(300)}"
+                    "Firebase Remote Config HTTP ${response.code}: ${response.text.take(1000)}"
                 )
                 return null
             }
