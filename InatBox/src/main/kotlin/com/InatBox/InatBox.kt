@@ -30,6 +30,14 @@ class InatBox : MainAPI() {
     private val urlToSearchResponse = mutableMapOf<String, SearchResponse>()
     private val aesKey = "ywevqtjrurkwtqgz" //Master secret and iv key (This is used for both secret key and iv. This is the embedded master key for loading categories like sport channels.)
 
+    // InatBox v15 Firebase Remote Config
+    private val firebaseProjectId = "inatbox-c60cd"
+    private val firebaseApiKey = "AIzaSyBFB8TuBXgojHyshkS6GSlnlQvCtPSRmFs"
+    private val firebaseAppId = "1:754795614042:android:c682b8144a8dd52bc1ad63"
+    private var inatRemoteConfig: JSONObject? = null
+    private var firebaseInstallationId: String? = null
+    private var firebaseInstallationToken: String? = null
+
     override val mainPage = mainPageOf(
         "https://boxbc.sbs/CDN/001_STR/boxbc.sbs/spor_v2.php"  to "Spor Kanalları",
         "https://boxbc.sbs/CDN/001_STR/boxbc.sbs/derbiler.php" to "Derbiler",
@@ -359,7 +367,7 @@ class InatBox : MainAPI() {
             contentToProcess = chContent
         }
 
-        val sourceUrl = contentToProcess.chUrl
+        val sourceUrl = resolveInatUrl(contentToProcess.chUrl, playHost = true)
 
         val headers: MutableMap<String, String> = mutableMapOf()
         try {
@@ -404,53 +412,201 @@ class InatBox : MainAPI() {
     }
 
     private suspend fun makeInatRequest(url: String): String? {
-        // Extract hostname using URI
+        val resolvedUrl = resolveInatUrl(url, playHost = false)
+
         val hostName = try {
-            URI(url).host ?: throw IllegalArgumentException("Invalid URL: $url")
+            URI(resolvedUrl).host ?: throw IllegalArgumentException("Invalid URL: $resolvedUrl")
         } catch (e: Exception) {
-            Log.e("InatBox", "Failed to extract hostname from URL: $url", e)
+            Log.e("InatBox", "Failed to extract hostname from URL: $resolvedUrl", e)
             return null
         }
 
-        val headers = mapOf(
+        val config = getInatRemoteConfig()
+        val referer = config?.optString("inat_disk_ref").orEmpty().ifBlank { "https://speedrestapi.com/" }
+        val userAgent = config?.optString("inat_disk_ua").orEmpty().ifBlank { "speedrestapi" }
+        val xRequestedWith = config?.optString("inat_disk_xrw").orEmpty().ifBlank { "com.bp.box" }
+
+        val headers = mutableMapOf(
             "Cache-Control" to "no-cache",
             "Content-Length" to "37",
             "Content-Type" to "application/x-www-form-urlencoded; charset=UTF-8",
             "Host" to hostName,
-            "Referer" to "https://speedrestapi.com/",
-            "X-Requested-With" to "com.bp.box"
+            "Referer" to referer,
+            "X-Requested-With" to xRequestedWith
         )
 
         val requestBody = "1=${aesKey}&0=${aesKey}"
 
         val interceptor = Interceptor { chain ->
             val request = chain.request()
-            val newRequest = request.newBuilder().header("User-Agent", "speedrestapi").build()
+            val newRequest = request.newBuilder().header("User-Agent", userAgent).build()
             chain.proceed(newRequest)
         }
 
-        val response = app.post(
-            url = url,
-            headers = headers,
-            requestBody = requestBody.toRequestBody(contentType = "application/x-www-form-urlencoded; charset=UTF-8".toMediaType()),
-            interceptor = interceptor
+        return try {
+            val response = app.post(
+                url = resolvedUrl,
+                headers = headers,
+                requestBody = requestBody.toRequestBody(
+                    contentType = "application/x-www-form-urlencoded; charset=UTF-8".toMediaType()
+                ),
+                interceptor = interceptor
+            )
+
+            if (response.isSuccessful) {
+                val source = response.body?.source()
+                val encryptedResponse = source?.readByteArray()
+                val encryptedResponseString = encryptedResponse?.let { String(it, Charsets.UTF_8) }
+                encryptedResponseString?.let { getJsonFromEncryptedInatResponse(it) }
+            } else {
+                Log.e("InatBox", "Request failed: HTTP ${response.code} URL=$resolvedUrl")
+                null
+            }
+        } catch (e: Exception) {
+            Log.e("InatBox", "Request error: ${e.message} URL=$resolvedUrl", e)
+            null
+        }
+    }
+
+    private suspend fun resolveInatUrl(originalUrl: String, playHost: Boolean): String {
+        if (!originalUrl.contains("boxbc.sbs", ignoreCase = true)) {
+            return originalUrl
+        }
+
+        val config = getInatRemoteConfig() ?: return originalUrl
+        val key = if (playHost) "inat_disk_play_host" else "inat_disk_host"
+        val configuredHost = config.optString(key).trim()
+            .ifBlank { config.optString("inat_disk_host").trim() }
+
+        if (configuredHost.isBlank()) {
+            Log.w("InatBox", "Remote Config did not contain $key; using old URL")
+            return originalUrl
+        }
+
+        val normalizedHost = configuredHost
+            .removePrefix("https://")
+            .removePrefix("http://")
+            .trimEnd('/')
+
+        val resolved = originalUrl.replace(
+            Regex("^https?://[^/]+", RegexOption.IGNORE_CASE),
+            "https://$normalizedHost"
         )
 
-        if (response.isSuccessful) {
-            // val encryptedResponse = response.text
-            // Log.d("InatBox", "Encrypted response: ${encryptedResponse}")
-            // Akışı başlatır
-            val source = response.body?.source()
-            val encryptedResponse = source?.readByteArray()  // Akışı parçalara ayırarak okur
+        Log.d("InatBox", "Resolved Inat URL: $originalUrl -> $resolved")
+        return resolved
+    }
 
-            // Eğer byteArray varsa, onu String'e dönüştür
-            val encryptedResponseString = encryptedResponse?.let { String(it, Charsets.UTF_8) }
+    private suspend fun getInatRemoteConfig(): JSONObject? {
+        inatRemoteConfig?.let { return it }
 
-            // Eğer response body boş değilse, şifresiz yanıtı al
-            return encryptedResponseString?.let { getJsonFromEncryptedInatResponse(it) }
-        } else {
-            Log.e("InatBox", "Request failed")
-            return null
+        return try {
+            val installation = getFirebaseInstallation() ?: return null
+            val installationId = installation.first
+            val authToken = installation.second
+
+            val body = JSONObject().apply {
+                put("appId", firebaseAppId)
+                put("appInstanceId", installationId)
+                put("appVersion", "15")
+                put("countryCode", "TR")
+                put("languageCode", "tr")
+                put("platform", "ANDROID")
+            }
+
+            val response = app.post(
+                url = "https://firebaseremoteconfig.googleapis.com/v1/projects/$firebaseProjectId/namespaces/firebase:fetch",
+                headers = mapOf(
+                    "Content-Type" to "application/json",
+                    "X-Goog-Api-Key" to firebaseApiKey,
+                    "X-Goog-Firebase-Installations-Auth" to authToken
+                ),
+                requestBody = body.toString()
+                    .toRequestBody("application/json; charset=utf-8".toMediaType())
+            )
+
+            if (!response.isSuccessful) {
+                Log.e("InatBox", "Firebase Remote Config HTTP ${response.code}")
+                return null
+            }
+
+            val json = JSONObject(response.text)
+            val entries = json.optJSONObject("entries") ?: return null
+            inatRemoteConfig = normalizeRemoteConfig(entries)
+
+            Log.d("InatBox", "Remote Config loaded: ${inatRemoteConfig?.keys()?.asSequence()?.toList()}")
+            inatRemoteConfig
+        } catch (e: Exception) {
+            Log.e("InatBox", "Remote Config error: ${e.message}", e)
+            null
+        }
+    }
+
+    private fun normalizeRemoteConfig(entries: JSONObject): JSONObject {
+        val result = JSONObject()
+        val keys = entries.keys()
+
+        while (keys.hasNext()) {
+            val key = keys.next()
+            val value = entries.opt(key)
+
+            when (value) {
+                is JSONObject -> {
+                    val stringValue = value.optString("stringValue", "")
+                    if (stringValue.isNotBlank()) {
+                        result.put(key, stringValue)
+                    } else {
+                        result.put(key, value)
+                    }
+                }
+                else -> result.put(key, value)
+            }
+        }
+
+        return result
+    }
+
+    private suspend fun getFirebaseInstallation(): Pair<String, String>? {
+        if (!firebaseInstallationId.isNullOrBlank() && !firebaseInstallationToken.isNullOrBlank()) {
+            return firebaseInstallationId!! to firebaseInstallationToken!!
+        }
+
+        return try {
+            val body = JSONObject().apply {
+                put("appId", firebaseAppId)
+                put("sdkVersion", "a:17.0.1")
+            }
+
+            val response = app.post(
+                url = "https://firebaseinstallations.googleapis.com/v1/projects/$firebaseProjectId/installations",
+                headers = mapOf(
+                    "Content-Type" to "application/json",
+                    "X-Goog-Api-Key" to firebaseApiKey
+                ),
+                requestBody = body.toString()
+                    .toRequestBody("application/json; charset=utf-8".toMediaType())
+            )
+
+            if (!response.isSuccessful) {
+                Log.e("InatBox", "Firebase Installations HTTP ${response.code}")
+                return null
+            }
+
+            val json = JSONObject(response.text)
+            val fid = json.optString("fid").trim()
+            val token = json.optJSONObject("authToken")?.optString("token").orEmpty().trim()
+
+            if (fid.isBlank() || token.isBlank()) {
+                Log.e("InatBox", "Firebase Installations response did not contain fid/authToken")
+                return null
+            }
+
+            firebaseInstallationId = fid
+            firebaseInstallationToken = token
+            fid to token
+        } catch (e: Exception) {
+            Log.e("InatBox", "Firebase Installations error: ${e.message}", e)
+            null
         }
     }
 
