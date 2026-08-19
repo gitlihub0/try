@@ -1,4 +1,4 @@
-package com.qwert
+package com.keyiflerolsun
 
 import android.util.Log
 import com.lagradost.cloudstream3.DubStatus
@@ -53,7 +53,12 @@ class InatBox : MainAPI() {
     private val aesKey = "ywevqtjrurkwtqgz" //Master secret and iv key
 
     override val mainPage = mainPageOf(
+        // Ferox'un çalışan kanal listesi
         "${contentUrl}/tv/list1.php"              to "Spor ve Kanallar",
+
+        // Diğer sürümde bulunan ayrı spor/derbi listeleri
+        "https://boxbc.sbs/CDN/001_STR/boxbc.sbs/spor_v2.php" to "Spor Kanalları",
+        "https://boxbc.sbs/CDN/001_STR/boxbc.sbs/derbiler.php" to "Derbiler",
         "${contentUrl}/tv/list2.php"              to "Kanallar Liste 2",
         "${contentUrl}/tv/sinema.php"             to "Sinema Kanalları",
         "${contentUrl}/tv/belgesel.php"           to "Belgesel Kanalları",
@@ -69,6 +74,7 @@ class InatBox : MainAPI() {
         "${contentUrl}/hb/index.php"              to "HBO Max",
         "${contentUrl}/tbi/index.php"             to "Tabii",
         "${contentUrl}/film/mubi.php"             to "Mubi",
+        "${contentUrl}/ccc/index.php"             to "TOD",
         "${contentUrl}/yabanci-dizi/index.php"    to "Yabancı Diziler",
         "${contentUrl}/yerli-dizi/index.php"      to "Yerli Diziler",
         "${contentUrl}/film/yerli-filmler.php"    to "Yerli Filmler",
@@ -566,4 +572,3 @@ class InatBox : MainAPI() {
         return searchResults
     }
 }
-
