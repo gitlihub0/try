@@ -469,14 +469,26 @@ class InatBox : MainAPI() {
     }
 
     private suspend fun resolveInatUrl(originalUrl: String, playHost: Boolean): String {
-        if (!originalUrl.contains("boxbc.sbs", ignoreCase = true)) {
+        val isSportHost = originalUrl.contains("boxbc.sbs", ignoreCase = true)
+        val isContentHost = originalUrl.contains("dizibox.rest", ignoreCase = true)
+        if (!isSportHost && !isContentHost) {
             return originalUrl
         }
 
         val config = getInatRemoteConfig() ?: return originalUrl
-        val key = if (playHost) "inat_disk_play_host" else "inat_disk_host"
-        val configuredHost = config.optString(key).trim()
-            .ifBlank { config.optString("inat_disk_host").trim() }
+
+        val key: String
+        val configuredHost: String
+        if (isSportHost) {
+            key = if (playHost) "inat_disk_play_host" else "inat_disk_host"
+            configuredHost = config.optString(key).trim()
+                .ifBlank { config.optString("inat_disk_host").trim() }
+        } else {
+            // v15 exposes the normal content host separately from the disk/sports host.
+            key = "inatHost"
+            configuredHost = config.optString("inatHost").trim()
+                .ifBlank { config.optString("inat2Host").trim() }
+        }
 
         if (configuredHost.isBlank()) {
             Log.w("InatBox", "Remote Config did not contain $key; using old URL")
@@ -505,21 +517,24 @@ class InatBox : MainAPI() {
             val installationId = installation.first
             val authToken = installation.second
 
+            // Firebase Remote Config client fetch uses snake_case fields and
+            // requires the Firebase Installation auth token in the request body.
+            // The previous version used camelCase fields, which caused HTTP 400.
             val body = JSONObject().apply {
-                put("appId", firebaseAppId)
-                put("appInstanceId", installationId)
-                put("appVersion", "15")
-                put("countryCode", "TR")
-                put("languageCode", "tr")
-                put("platform", "ANDROID")
+                put("app_id", firebaseAppId)
+                put("app_instance_id", installationId)
+                put("app_instance_id_token", authToken)
+                put("app_version", "15")
+                put("country_code", "tr")
+                put("language_code", "tr-TR")
+                put("package_name", "com.bp.box")
+                put("platform_version", android.os.Build.VERSION.RELEASE)
             }
 
             val response = app.post(
-                url = "https://firebaseremoteconfig.googleapis.com/v1/projects/$firebaseProjectId/namespaces/firebase:fetch",
+                url = "https://firebaseremoteconfig.googleapis.com/v1/projects/$firebaseProjectId/namespaces/firebase:fetch?key=$firebaseApiKey",
                 headers = mapOf(
-                    "Content-Type" to "application/json",
-                    "X-Goog-Api-Key" to firebaseApiKey,
-                    "X-Goog-Firebase-Installations-Auth" to authToken
+                    "Content-Type" to "application/json"
                 ),
                 requestBody = body.toString()
                     .toRequestBody("application/json; charset=utf-8".toMediaType())
