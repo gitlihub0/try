@@ -607,7 +607,6 @@ class InatBox : MainAPI() {
             }
 
             val json = JSONObject(response.text)
-            val fid = json.optString("fid").trim()
             val token = json.optJSONObject("authToken")?.optString("token").orEmpty().trim()
 
             if (fid.isBlank() || token.isBlank()) {
