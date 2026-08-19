@@ -53,8 +53,10 @@ class InatBox : MainAPI() {
     private val aesKey = "ywevqtjrurkwtqgz" //Master secret and iv key
 
     override val mainPage = mainPageOf(
-        "${contentUrl}/tv/list1.php"              to "Spor ve Kanallar",
-        "${contentUrl}/tv/list2.php"              to "Kanallar Liste 2",
+        "${contentUrl}/tv/list1.php"              to "Liste 1 - TR",
+        "${contentUrl}/tv/list2.php"              to "Liste 2 - GLB",
+        "${contentUrl}/tv/list3.php"              to "Liste 3 - TR",
+        "${contentUrl}/tv/spor.php"               to "Spor",
         "${contentUrl}/tv/sinema.php"             to "Sinema Kanalları",
         "${contentUrl}/tv/belgesel.php"           to "Belgesel Kanalları",
         "${contentUrl}/tv/ulusal.php"             to "Ulusal Kanallar",
